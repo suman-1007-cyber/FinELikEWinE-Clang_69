@@ -1,0 +1,53 @@
+name: Mirror Clang
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_url:
+        description: "Clang archive URL to copy into a release of this repo"
+        required: true
+        default: "https://github.com/MrShockWAVEog/Google-Clang-Mirror/releases/download/clang-r614150-aosp/clang.tar.gz"
+      tag:
+        description: "Release tag to create in this repo"
+        required: true
+        default: "clang-r614150-aosp"
+
+permissions:
+  contents: write
+
+jobs:
+  mirror:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download and check the archive
+        env:
+          SRC: ${{ inputs.source_url }}
+        run: |
+          curl -fL --retry 5 --retry-all-errors --retry-delay 5 -o clang.tar.gz "$SRC"
+          ls -l clang.tar.gz
+          magic=$(od -An -tx1 -N2 clang.tar.gz | tr -d ' \n')
+          if [ "$magic" != "1f8b" ]; then
+            echo "::error::Not a .tar.gz file. First bytes of the response:"
+            head -c 300 clang.tar.gz; echo
+            exit 1
+          fi
+          tar -tzf clang.tar.gz > /tmp/filelist.txt
+          if ! grep -qE '(^|/)bin/clang$' /tmp/filelist.txt; then
+            echo "::error::bin/clang not found inside the archive"
+            head -20 /tmp/filelist.txt
+            exit 1
+          fi
+          sha256sum clang.tar.gz | tee clang.sha256
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag }}
+          name: ${{ inputs.tag }}
+          body: |
+            Copy of the AOSP Clang toolchain used by the FinELikEWinE kernel builder.
+            Original download: ${{ inputs.source_url }}
+            The SHA-256 checksum is attached as clang.sha256.
+          files: |
+            clang.tar.gz
+            clang.sha256
